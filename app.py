@@ -16,7 +16,7 @@ st.markdown('''<style>
 .hero{background:linear-gradient(115deg,#122448,#244b91);padding:32px;border-radius:22px;color:white;margin-bottom:24px;}
 .hero h1{color:white;margin:8px 0;font-size:2.6rem;}.hero p{color:#dce7ff;max-width:700px;}
 .tag{font-size:.8rem;letter-spacing:.12em;color:#9fc6ff;}
-div[data-testid="stMetric"]{background:white;border:1px solid #e2e8f0;border-radius:14px;padding:16px;}
+div[data-testid="stMetric"]{background:transparent;color:inherit;border:1px solid rgba(128,145,170,.45);border-radius:14px;padding:16px;}
 .stButton button{border-radius:10px;min-height:44px;}
 /* Белгіше қарпі жүктелмесе, ағылшынша лигатура орнына қазақша мәтін. */
 [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"],
