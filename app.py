@@ -7,6 +7,12 @@ import random
 import sqlite3
 from uuid import uuid4
 import streamlit as st
+import inspect
+import importlib
+import mentor_core as _mentor_core
+# Streamlit қайта жүктегенде ескі функция жадта қалса, дискідегі модульді қайта оқу.
+if 'delivery' not in inspect.signature(_mentor_core.save_attempt).parameters:
+    _mentor_core = importlib.reload(_mentor_core)
 import sheets_sync
 from auth_ui import render_auth, sign_out, user_from_session
 from mentor_core import answer_complete, grade, history, load_content, plan, question_points, save_attempt
