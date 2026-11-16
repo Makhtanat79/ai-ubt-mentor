@@ -7,8 +7,10 @@ import re
 import sqlite3
 import time
 from urllib.request import Request, urlopen
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 import mentor_core as core
+
+DIAGNOSTICS_VERSION = 1
 
 
 def valid_url(url):
@@ -52,7 +54,12 @@ def send(payload, url, secret):
         reply = json.loads(raw)
         if reply.get('ok') is True and reply.get('attempt_id') == payload['attempt_id']:
             return True, ''
+        code = reply.get('code')
+        if code in ('signature','configuration','validation','busy','headers','server','request'):
+            return False, 'google_' + code
         return False, 'rejected'
+    except HTTPError as error:
+        return False, ('http_' + str(error.code)) if error.code in (401,403,404,405,429,500,503) else 'connection'
     except (OSError, URLError, ValueError, TypeError, AttributeError):
         return False, 'connection'
 
@@ -77,3 +84,35 @@ def counts(profile):
     with core.connect() as con:
         rows = con.execute('SELECT o.delivered_at FROM sheets_outbox o JOIN attempts a ON a.id=o.attempt_id WHERE a.profile=?', (profile,)).fetchall()
     return {'sent':sum(r[0] is not None for r in rows), 'pending':sum(r[0] is None for r in rows)}
+
+
+ERROR_MESSAGES = {
+    'url': 'Streamlit Secrets ішіндегі web_app_url дұрыс емес. Apps Script веб-мекенжайы /exec деп аяқталсын.',
+    'secret': 'Streamlit Secrets ішіндегі shared_secret толық емес. Ол Apps Script-тегі MENTOR_SHEETS_SECRET мәнімен бірдей болуы керек. Кілтті чатқа жібермеңіз.',
+    'google_signature': 'Google сұрауды қабылдады, бірақ құпия қолтаңба сәйкес келмеді. Екі жақтағы құпия кілт бірдей екенін тексеріңіз.',
+    'google_configuration': 'Apps Script ішінде MENTOR_SHEETS_SECRET орнатылмаған. prepareConnection функциясын орындап, кілтті Streamlit Secrets-пен сәйкестендіріңіз.',
+    'google_server': 'Apps Script кестеге жазу кезінде тоқтады. Скрипттің кестеге рұқсаты мен орындалу журналын тексеру керек.',
+    'google_headers': 'Нәтижелер парағының баған атаулары кодпен сәйкес емес. Жолдарды жоймай, мұғаліммен тексеріңіз.',
+    'google_validation': 'Google-ге жеткен деректің пішімі немесе уақыт белгісі қабылданбады. Код нұсқалары мен сервер уақытын тексеру керек.',
+    'google_busy': 'Google кестесі бос емес. Сәл кейін қайта жіберуге болады.',
+    'http_401': 'Google серверден кіруді талап етіп тұр. Apps Script веб-қосымшасының қолжетімділігін тексеріңіз.',
+    'http_403': 'Google сұрауға рұқсат бермеді. Apps Script жариялауындағы қолжетімділікті тексеріңіз.',
+    'http_404': 'Жарияланған Apps Script мекенжайы табылмады. /exec сілтемесін тексеріңіз.',
+    'http_429': 'Google сұрау шектеуіне жетті. Кейін қайта көріңіз.',
+    'connection': 'Google жауабы алынбады немесе JSON орнына кіру беті келді. Интернетті және веб-қосымшаның серверге қолжетімділігін тексеру керек.',
+    'response': 'Google күтілген қысқа жауапты бермеді. Веб-қосымша сілтемесін және қолжетімділігін тексеру керек.',
+}
+
+def diagnosis(profile, url, secret):
+    if not valid_url(url):
+        return 'url', ERROR_MESSAGES['url']
+    if len(secret) < 32:
+        return 'secret', ERROR_MESSAGES['secret']
+    with core.connect() as con:
+        row = con.execute('SELECT o.last_error FROM sheets_outbox o JOIN attempts a ON a.id=o.attempt_id WHERE a.profile=? AND o.delivered_at IS NULL ORDER BY a.rowid DESC LIMIT 1', (profile,)).fetchone()
+    code = row[0] if row else ''
+    if not code:
+        return '', ''
+    if code not in ERROR_MESSAGES:
+        code = 'rejected'
+    return code, ERROR_MESSAGES.get(code, 'Google нәтиженің жеткізілгенін растамады. Қосылымды тексеру керек.')

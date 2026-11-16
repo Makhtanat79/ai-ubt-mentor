@@ -14,6 +14,8 @@ import mentor_core as _mentor_core
 if 'delivery' not in inspect.signature(_mentor_core.save_attempt).parameters:
     _mentor_core = importlib.reload(_mentor_core)
 import sheets_sync
+if getattr(sheets_sync, 'DIAGNOSTICS_VERSION', 0) < 1:
+    sheets_sync = importlib.reload(sheets_sync)
 from auth_ui import render_auth, sign_out, user_from_session
 from mentor_core import answer_complete, grade, history, load_content, plan, question_points, save_attempt
 
@@ -117,6 +119,10 @@ def show_sheets_status(profile, auto_attempt=None):
                 st.warning('Қазір жіберілмеді. Нәтижені CSV арқылы жүктеп алыңыз, кейін қайта көріңіз.')
             else:
                 st.success(f"Жеткізілген нәтиже: {outcome['sent']}.")
+        issue_code, issue_text = sheets_sync.diagnosis(profile, url, secret)
+        if issue_code:
+            st.info('Жіберу себебі: ' + issue_text)
+            st.caption('Қауіпсіз тексеру коды: ' + issue_code + '. Бұл кодты мұғалімге жіберуге болады; құпия кілт көрсетілмейді.')
 
 def render_quiz(profile):
     if 'quiz' not in st.session_state:
