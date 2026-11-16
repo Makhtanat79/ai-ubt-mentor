@@ -7,6 +7,7 @@ import random
 import sqlite3
 from uuid import uuid4
 import streamlit as st
+import sheets_sync
 from auth_ui import render_auth, sign_out, user_from_session
 from mentor_core import answer_complete, grade, history, load_content, plan, question_points, save_attempt
 
@@ -86,12 +87,38 @@ def show_result(result):
             st.info(q['explanation'])
             st.caption('Келесі қадам: осы тақырыптың теориясын оқып, тараулық тестті қайта орындаңыз.')
 
+def show_sheets_status(profile, auto_attempt=None):
+    url, secret = sheets_sync.settings()
+    if not url and not secret:
+        st.caption('Мұғалімнің Google кестесіне жіберу қосылымы әзірге бапталмаған.')
+        return
+    stats = sheets_sync.counts(profile)
+    if stats['pending'] and auto_attempt and st.session_state.get('last_auto_sync') != auto_attempt:
+        st.session_state.last_auto_sync = auto_attempt
+        with st.spinner('Нәтижені мұғалімнің кестесіне жіберіп жатырмыз…'):
+            outcome = sheets_sync.sync_pending(profile, url, secret, limit=1)
+        stats = sheets_sync.counts(profile)
+        if not outcome['configured']:
+            st.warning('Кесте қосылымының баптауы толық емес. Нәтиже сайтта сақталды.')
+    if stats['sent']:
+        st.caption(f"Мұғалімнің Google кестесіне жеткізілген нәтиже: {stats['sent']}.")
+    if stats['pending']:
+        st.warning(f"Кестеге жіберуді күтіп тұрған нәтиже: {stats['pending']}. Сайттағы нәтиже сақталған; байланыс қалпына келгенде қайта жіберіңіз.")
+        if st.button('Кестеге жіберуді қайталау', key='retry_sheets'):
+            with st.spinner('Кестеге жіберіп жатырмыз…'):
+                outcome = sheets_sync.sync_pending(profile, url, secret, limit=3)
+            if outcome['failed'] or not outcome['configured']:
+                st.warning('Қазір жіберілмеді. Нәтижені CSV арқылы жүктеп алыңыз, кейін қайта көріңіз.')
+            else:
+                st.success(f"Жеткізілген нәтиже: {outcome['sent']}.")
+
 def render_quiz(profile):
     if 'quiz' not in st.session_state:
         st.info('Алдымен тест таңдаңыз немесе теория бөліміндегі тараулық тестті бастаңыз.')
         return
     st.subheader(st.session_state.quiz_title)
     if 'result' in st.session_state:
+        show_sheets_status(profile, st.session_state.attempt_id)
         show_result(st.session_state.result)
         a, b = st.columns(2)
         a.button('Теорияны қайталау', on_click=go, args=(PAGES[1],), key='review_theory')
@@ -132,7 +159,7 @@ def render_quiz(profile):
             result = grade(quiz, answers)
             result['title'] = st.session_state.quiz_title
             try:
-                save_attempt(st.session_state.attempt_id, profile, result)
+                save_attempt(st.session_state.attempt_id, profile, result, delivery=sheets_sync.delivery_payload(user, result))
             except (sqlite3.Error, OSError):
                 st.error('Нәтижені сақтау мүмкін болмады. Қалтаға жазу рұқсатын тексеріп, қайта басыңыз.')
             else:
@@ -166,7 +193,7 @@ with st.sidebar:
     st.divider()
     st.caption('Теория → мысал → тараулық тест → қате талдау → қайта орындау')
     st.caption('Ақылы API жоқ. Жеке жоспар ережелер бойынша құрылады.')
-    st.caption('Нәтижелер жеке есептік жазбаңызда сақталады.')
+    st.caption('Нәтижелер жеке есептік жазбаңызда сақталады. Қосылым бапталса, пайдаланушы аты, сынып және тест қорытындысы мұғалімнің Google кестесіне жіберіледі; құпиясөз жіберілмейді.')
 if st.session_state.page not in PAGES[:2] and not user:
     render_auth()
     st.stop()
@@ -258,6 +285,7 @@ elif page == PAGES[3]:
 
 elif page == PAGES[4]:
     st.title('Менің нәтижелерім')
+    show_sheets_status(profile)
     if not records:
         st.info('Әзірге нәтиже жоқ. Алдымен тараулық тест немесе дайындық нұсқасын орындаңыз.')
         st.button('Теорияға өту', on_click=go, args=(PAGES[1],))

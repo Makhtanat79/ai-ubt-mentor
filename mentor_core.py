@@ -59,13 +59,21 @@ def connect():
     try:
         with con:
             con.execute('CREATE TABLE IF NOT EXISTS attempts (id TEXT PRIMARY KEY, profile TEXT NOT NULL, created TEXT NOT NULL, payload TEXT NOT NULL)')
+            con.execute('CREATE TABLE IF NOT EXISTS sheets_outbox (attempt_id TEXT PRIMARY KEY, payload TEXT NOT NULL, delivered_at INTEGER, tries INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT \'\')')
             yield con
     finally:
         con.close()
 
-def save_attempt(attempt_id, profile, result):
+def save_attempt(attempt_id, profile, result, delivery=None):
     with connect() as con:
         con.execute('INSERT OR IGNORE INTO attempts VALUES (?, ?, ?, ?)', (attempt_id, profile, datetime.now(ZoneInfo('Asia/Almaty')).isoformat(timespec='seconds'), json.dumps(result, ensure_ascii=False)))
+        if delivery is not None:
+            row = con.execute('SELECT profile, created FROM attempts WHERE id=?', (attempt_id,)).fetchone()
+            if row[0] != profile:
+                raise ValueError('Тест әрекеті басқа есептік жазбаға тиесілі.')
+            item = dict(delivery, attempt_id=attempt_id, completed_at=row[1])
+            con.execute('INSERT OR IGNORE INTO sheets_outbox (attempt_id,payload) VALUES (?,?)', (attempt_id,json.dumps(item,ensure_ascii=False)))
+
 
 def history(profile):
     with connect() as con:
